@@ -1,0 +1,15 @@
+-- |
+
+module Cache where
+
+import Data.Text (Text)
+import qualified Data.Text as T
+
+-- | A haskell package and a version string.  We don't interpret the
+-- version string, so we don't bother parsing its parts.
+data PkgVer = PkgVer Text Text
+
+-- | A Nix attribute: name and value
+data NixDef = NixDef Text Text
+
+hackageNixPath = "~/code/nixHaskellVersioned"

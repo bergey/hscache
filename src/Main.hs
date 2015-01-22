@@ -10,14 +10,16 @@ import           System.IO
 import Control.Applicative
 import           Data.Attoparsec.Text
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
+import Data.Foldable
 
 main :: IO ()
 main = do
     args <- getArgs
     cout <- T.pack <$> dryrun args
-    stderrOrStdout $ parseOnly dryrunVersions cout
-
-stderrOrStdout :: Show a => Either String a -> IO ()
-stderrOrStdout e = case e of
-    Left er -> hPutStrLn stderr er
-    Right v -> print v
+    name <- thisPackageName
+    case excludePkg name <$> parseOnly dryrunVersions cout of
+     Left er -> hPutStrLn stderr er
+     Right versions -> do
+         T.writeFile "hscache.nix" $ nixText versions
+         traverse_ createDerivation versions

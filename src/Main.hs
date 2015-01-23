@@ -16,7 +16,7 @@ import Data.Foldable
 main :: IO ()
 main = do
     args <- getArgs
-    cout <- T.pack <$> dryrun args
+    cout <- dryrun args
     name <- thisPackageName
     case excludePkg name <$> parseOnly dryrunVersions cout of
      Left er -> hPutStrLn stderr er

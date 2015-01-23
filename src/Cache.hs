@@ -104,9 +104,9 @@ depsIntro = string "In order, the following would be installed (use -v for more 
 versionLine :: Parser PkgVer
 versionLine = pkgFromText =<< anyLine
 
-dryrun :: [String] -> IO String
-dryrun args = readProcess "cabal"
-              ("install" : "--dry-run" : "--package-db=clear" : "--package-db=global" : args) ""
+dryrun :: [String] -> IO Text
+dryrun args = T.pack $ readProcess "cabal" (defArgs ++ args) "" where
+  defArgs = ["install", "--dry-run", "--package-db=clear", "--package-db=global"]
 
 cabalFile :: IO FP.FilePath
 cabalFile = do

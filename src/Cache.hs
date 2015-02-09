@@ -119,7 +119,9 @@ versionLine = pkgFromText =<< anyLine
 
 dryrun :: [String] -> IO Text
 dryrun args = T.pack <$> readProcess "cabal" (defArgs ++ args) "" where
-  defArgs = ["install", "--dry-run", "--package-db=clear", "--package-db=global"]
+  defArgs = ["install", "--dry-run"
+            , "--package-db=clear", "--package-db=global"
+            , "--constraint=transformers installed"]
 
 cabalFile :: IO FP.FilePath
 cabalFile = do

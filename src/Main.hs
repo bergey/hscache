@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 -- |
 
 module Main where
@@ -6,6 +8,7 @@ import           Cache
 
 import           System.Environment
 import           System.IO
+import qualified Filesystem as FP
 
 import Control.Applicative
 import           Data.Attoparsec.Text
@@ -21,5 +24,7 @@ main = do
     case excludePkg name <$> parseOnly dryrunVersions cout of
      Left er -> hPutStrLn stderr er
      Right versions -> do
-         T.writeFile "hscache.nix" $ nixText versions
+         makeHscacheDir
+         home <- FP.getHomeDirectory
+         T.writeFile "hscache.nix" $ nixText home versions
          traverse_ createDerivation versions

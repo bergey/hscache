@@ -62,30 +62,45 @@ a </> b = case (T.last a, T.head b) of -- order of cases matters
 
 -- | directory where nix derivations are kept
 hackageNixPath :: Text
-hackageNixPath = "/home/bergey/code/nixHaskellVersioned/"
+hackageNixPath = ".hscache"
+
+makeHscacheDir :: IO ()
+makeHscacheDir = do
+    home <- FP.getHomeDirectory
+    FP.createDirectory True $ FP.append home $ FP.fromText hackageNixPath
 
 -- | the path to a particular derivation
-derivationPath :: PkgVer -> Text
-derivationPath (PkgVer pkg ver)= hackageNixPath </> pkg </> ver <> ".nix"
+derivationPath :: FP.FilePath -> PkgVer -> Text
+derivationPath home (PkgVer pkg ver) = home' </> hackageNixPath </> pkg </> filename where
+  filename = pkg <> "-" <> ver <> ".nix"
+  home' = case FP.toText home of
+      Left t -> t
+      Right t -> t
+
+derivationPath' :: FP.FilePath -> PkgVer -> FP.FilePath
+derivationPath' home (PkgVer pkg ver) =
+    FP.append home . FP.fromText $ hackageNixPath </> pkg </> filename where
+      filename = pkg <> "-" <> ver <> ".nix"
 
 -- | the nix expression to load a particular derivation from disk
-versionedDerivation :: PkgVer -> NixDef
-versionedDerivation pkg = NixDef (_pkgName pkg) def where
-  def = mconcat ["self.callPackage ", derivationPath pkg, "{}"]
+versionedDerivation :: FP.FilePath -> PkgVer -> NixDef
+versionedDerivation home pkg = NixDef (_pkgName pkg) def where
+  def = mconcat ["self.callPackage \"", derivationPath home pkg, "\" {}"]
 
 -- | check whether a given derivation is already on disk
-derivationExists :: PkgVer -> IO Bool
-derivationExists = FP.isFile . FP.fromText . derivationPath
+derivationExists :: FP.FilePath -> PkgVer -> IO Bool
+derivationExists home = FP.isFile . FP.fromText . derivationPath home
 
 -- | save a derivation (with cabal2nix) if it's not already on disk
 createDerivation :: PkgVer -> IO ()
 createDerivation pkg = do
-    exists <- derivationExists pkg
+    home <- FP.getHomeDirectory
+    exists <- derivationExists home pkg
     if exists then return () else do
         nix <- readProcess "cabal2nix" [T.unpack $ "cabal://" <> textFromPkg pkg] ""
-        let path = FP.fromText $ derivationPath pkg
+        let path = derivationPath' home pkg
         FP.createDirectory True (FP.directory path)
-        writeFile (T.unpack $ derivationPath pkg) nix
+        writeFile (FP.encodeString $ derivationPath' home pkg) nix
 
 dryrunVersions :: Parser [PkgVer]
 dryrunVersions = dryrunHeader *> many versionLine
@@ -117,9 +132,9 @@ thisPackageName = do
     let (C.PackageName name) = C.packageName description
     return $ T.pack name
 
-nixText :: [PkgVer] -> Text
-nixText pkgs = mconcat [header, pinnedDeps, footer] where
-  pinnedDeps = mconcat . fmap (textFromNix . versionedDerivation) $ pkgs
+nixText :: FP.FilePath -> [PkgVer] -> Text
+nixText home pkgs = mconcat [header, pinnedDeps, footer] where
+  pinnedDeps = mconcat . fmap (textFromNix . versionedDerivation home) $ pkgs
   header = "{ pkgs ? import <nixpkgs> {}, haskellPackages ? pkgs.haskellngPackages }:\n\n\
 \let\n\
 \  hs = haskellPackages.override {\n\

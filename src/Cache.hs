@@ -105,7 +105,7 @@ versionLine :: Parser PkgVer
 versionLine = pkgFromText =<< anyLine
 
 dryrun :: [String] -> IO Text
-dryrun args = T.pack $ readProcess "cabal" (defArgs ++ args) "" where
+dryrun args = T.pack <$> readProcess "cabal" (defArgs ++ args) "" where
   defArgs = ["install", "--dry-run", "--package-db=clear", "--package-db=global"]
 
 cabalFile :: IO FP.FilePath

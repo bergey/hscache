@@ -32,12 +32,10 @@ data PkgVer = PkgVer {
     } deriving Show
 
 pkgFromText :: Alternative m => Text -> m PkgVer
-pkgFromText t = case filter (/= "") $ T.split isSpace t of
-    (t':_) ->  case T.split (=='-') t of
-        [] -> empty
-        [_singleton] -> empty
-        parts -> pure $ PkgVer (T.intercalate "-" (init parts)) (last parts)
-    _ -> empty
+pkgFromText t = case T.split (=='-') . T.takeWhile (not . isSpace) $ t of
+    [] -> empty
+    [_singleton] -> empty
+    parts -> pure $ PkgVer (T.intercalate "-" (init parts)) (last parts)
 
 textFromPkg :: PkgVer -> Text
 textFromPkg (PkgVer name ver) = mconcat [name, "-", ver]

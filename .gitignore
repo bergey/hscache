@@ -4,3 +4,7 @@
 /Setup.hi
 /Setup.o
 /hscache.nix
+/.cabal-sandbox/
+/cabal.sandbox.config
+/dryrun.nix
+/result

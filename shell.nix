@@ -11,4 +11,4 @@ let
     mkDerivation = expr: args.mkDerivation (expr // {
       buildTools = [  hs.cabal-install ];
     });
-  })).env
+  }))

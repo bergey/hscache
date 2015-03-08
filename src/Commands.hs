@@ -12,10 +12,14 @@ import           Imports
 
 build :: Sh ()
 build = do
-    run_  "nix-shell" ["hscache.nix", "-K", a"-A", "env", "--command", "cabal build" ]
+    run_  "nix-shell" ["hscache.nix", "-K", "-A", "env", "--command", "cabal build" ]
 
 install :: Sh ()
-install = shell "nix-env -f hscache.nix -i"
+install = do
+    print_stdout False $ do
+        deriv <- cabal2nix ["."]
+        writefile "default.nix" deriv
+    shell "nix-env -f hscache.nix -i"
 
 nix_shell :: Sh ()
 nix_shell = shell "nix-shell hscache.nix -A env"

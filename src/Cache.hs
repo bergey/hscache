@@ -1,5 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 -- |
 
@@ -12,12 +13,15 @@ import qualified Distribution.PackageDescription.Parse as C
 import qualified Distribution.Verbosity as C
 import qualified Distribution.Package as C
 import Data.List.Split (splitWhen)
+import Data.FileEmbed
 
 import Imports
 import qualified Filesystem                as FP
 import qualified Filesystem.Path.CurrentOS as FP
 import qualified Data.Text                 as T
 import qualified Data.Text.IO              as T
+import qualified Data.Text.Encoding as E
+import qualified Data.ByteString as BS
 import Prelude (init, last)
 
 -- | A haskell package and a version string.  We don't interpret the
@@ -133,6 +137,7 @@ dryrun :: [Text] -> Sh Text
 dryrun args = do
     cleanSandbox
     -- create dryrun.nix / tempfile
+    writefile "dryrun.nix" $ E.decodeUtf8 dryrunNix
     errExit False $ do
         let cabalCmd = "cabal install --dry-run " <> T.intercalate " " args
         frozen <- run "nix-shell" ["dryrun.nix", "--command", cabalCmd]
@@ -145,6 +150,10 @@ dryrun args = do
          seriousErr -> do
              echo_err $ "nix-shell failed with Exit Code " <> T.pack (show seriousErr)
              exit 1
+
+-- load at compile time from the .nix in the source
+dryrunNix :: BS.ByteString
+dryrunNix = $(embedFile "dryrun.nix")
 
 cabalFile :: Sh FilePath
 cabalFile = do

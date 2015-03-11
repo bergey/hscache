@@ -1,6 +1,6 @@
-{ mkDerivation, attoparsec, base, Cabal, optparse-applicative
-, process, shelly, split, stdenv, system-fileio, system-filepath
-, text
+{ mkDerivation, attoparsec, base, bytestring, Cabal, file-embed
+, hastache, optparse-applicative, process, shelly, split, stdenv
+, system-fileio, system-filepath, text
 }:
 mkDerivation {
   pname = "hscache";
@@ -9,8 +9,9 @@ mkDerivation {
   isLibrary = false;
   isExecutable = true;
   buildDepends = [
-    attoparsec base Cabal optparse-applicative process shelly split
-    system-fileio system-filepath text
+    attoparsec base bytestring Cabal file-embed hastache
+    optparse-applicative process shelly split system-fileio
+    system-filepath text
   ];
   description = "Sandboxed cabal builds with cached dependencies";
   license = stdenv.lib.licenses.bsd3;

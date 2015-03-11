@@ -12,7 +12,7 @@ import           Imports
 
 build :: Sh ()
 build = do
-    run_  "nix-shell" ["hscache.nix", "-K", "-A", "env", "--command", "cabal build" ]
+    run_  "nix-shell" ["hscache.nix", "-A", "env", "--command", "cabal build" ]
 
 install :: Sh ()
 install = do
@@ -32,16 +32,16 @@ repl = shell "nix-shell hscache.nix -A env --command ghci"
 
 -- | Call configure if the arguments require it, or if there is no hscache.nix.
 -- Return True if configure was needed, otherwise False
-configureIfNeeded :: [Text] -> Sh Bool
-configureIfNeeded args = case args of
+configureIfNeeded :: GHC -> [Text] -> Sh Bool
+configureIfNeeded ghc args = case args of
     [] -> do
         exists <- test_f "hscache.nix"
         if exists then return False else do
             echo "hscache.nix does not exist; creating with default options"
-            freeze args >> return True
+            freeze ghc args >> return True
     _ -> do
         echo "reconfiguring with arguments given on command-line"
-        freeze args
+        freeze ghc args
         return True
 
 -- | Register the specified directories in the local sandbox, and

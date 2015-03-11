@@ -7,6 +7,8 @@
 module Cache where
 
 import           Data.Attoparsec.Text
+import Text.Hastache
+import Text.Hastache.Context
 
 -- from Cabal
 import qualified Distribution.PackageDescription.Parse as C
@@ -21,6 +23,8 @@ import qualified Filesystem.Path.CurrentOS as FP
 import qualified Data.Text                 as T
 import qualified Data.Text.IO              as T
 import qualified Data.Text.Encoding as E
+import qualified Data.Text.Lazy as L
+import qualified Data.Text.Lazy.IO as L
 import qualified Data.ByteString as BS
 import Prelude (init, last)
 
@@ -52,15 +56,6 @@ data NixDef = NixDef {
 textFromNix :: NixDef -> Text
 textFromNix n = mconcat [_attrName n, " = ", _attrValue n, ";\n"]
 
---( <//>) :: Text -> Text -> Text
--- "" <//> b = b
--- a <//> "" = a
--- a <//> b = case (T.last a, T.head b) of -- order of cases matters
---     ('/', '/') -> T.init a <> T.tail b
---     ('/', _) -> a <> b
---     (_, '/') -> a <> b
---     _ -> mconcat [a, "/", b]
-
 -- | directory where nix derivations are kept
 hackageNixPath :: Text
 hackageNixPath = ".hscache"
@@ -69,13 +64,6 @@ makeHscacheDir :: Sh ()
 makeHscacheDir = do
     home <- liftIO $ FP.getHomeDirectory
     mkdir_p $ home </> hackageNixPath
-
--- derivationPath :: FP.FilePath -> PkgVer -> Text
--- derivationPath home (PkgVer pkg ver) = home' <//> hackageNixPath <//> pkg <//> filename where
---   filename = pkg <> "-" <> ver <> ".nix"
---   home' = case FP.toText home of
---       Left t -> t
---       Right t -> t
 
 -- | the path to a particular derivation
 derivationPath :: FP.FilePath -> PkgVer -> FP.FilePath
@@ -107,8 +95,8 @@ createDerivation :: PkgVer -> Sh ()
 createDerivation pkg = do
     home <- liftIO $ FP.getHomeDirectory
     exists <- derivationExists home pkg
-    if exists then return () else do
-        nix <- cabal2nix ["cabal://" <> textFromPkg pkg]
+    if exists then return () else print_stdout False $ do
+        nix <- cabal2nix ["cabal://" <> textFromPkg pkg, "--no-check"]
         let path = derivationPath home pkg
         mkdir_p $ FP.directory path
         writefile (derivationPath home pkg) nix
@@ -128,18 +116,28 @@ depsIntro = string "In order, the following would be installed (use -v for more 
 versionLine :: Parser PkgVer
 versionLine = pkgFromText =<< anyLine
 
+writeDryrunNix :: GHC -> Sh ()
+writeDryrunNix (GHC ghc) = do
+    home <- toTextWarn =<< liftIO FP.getHomeDirectory
+    let
+        noEscape = defaultConfig { muEscapeFunc = emptyEscape }
+        context "ghc"= MuVariable ghc
+        context "home" = MuVariable home
+    text <- hastacheStr noEscape dryrunTemplate (mkStrContext context)
+    liftIO $ L.writeFile "dryrun.nix" text
+
+
 -- | call @cabal install --dry-run@ to get a list of dependencies with
 -- appropriate versions.  This runs in a cabal sandbox to handle
 -- add-source (local) dependencies, and in a nix-shell to pick the
 -- same versions of GHC & Cabal used for other commands.  Both are
 -- necessary to pick the correct versions.
-dryrun :: [Text] -> Sh Text
-dryrun args = do
+dryrun :: GHC -> [Text] -> Sh Text
+dryrun ghc args = do
     cleanSandbox
-    -- create dryrun.nix / tempfile
-    writefile "dryrun.nix" $ E.decodeUtf8 dryrunNix
+    writeDryrunNix ghc
     errExit False $ do
-        let cabalCmd = "cabal install --dry-run " <> T.intercalate " " args
+        let cabalCmd = "cabal install --dry-run --constraint 'transformers installed' " <> T.intercalate " " args
         frozen <- run "nix-shell" ["dryrun.nix", "--command", cabalCmd]
         ex <- lastExitCode
         case ex of
@@ -152,8 +150,8 @@ dryrun args = do
              exit 1
 
 -- load at compile time from the .nix in the source
-dryrunNix :: BS.ByteString
-dryrunNix = $(embedFile "dryrun.nix")
+dryrunTemplate :: Text
+dryrunTemplate = E.decodeUtf8 $(embedFile "dryrun-template.nix")
 
 cabalFile :: Sh FilePath
 cabalFile = do
@@ -169,16 +167,19 @@ thisPackageName = do
     let (C.PackageName name) = C.packageName description
     return $ T.pack name
 
-freeze :: [Text] -> Sh ()
-freeze args = do
-    cout <- dryrun args
+newtype GHC = GHC Text
+
+freeze :: GHC -> [Text] -> Sh ()
+freeze ghc args = do
+    cout <- dryrun ghc args
     name <- thisPackageName
     case excludePkg name <$> parseOnly dryrunVersions cout of
      Left er -> echo_err $ T.pack er
      Right versions -> do
          makeHscacheDir
          home <- liftIO $ FP.getHomeDirectory
-         writefile "hscache.nix" $ nixText home versions
+         deriv <- nixText ghc home versions
+         liftIO $ L.writeFile "hscache.nix" deriv
          traverse_ createDerivation versions
 
 shell :: Text -> Sh ()
@@ -216,14 +217,20 @@ cleanSandbox = do
     createSandbox
     addSource dirs
 
-nixText :: FP.FilePath -> [PkgVer] -> Text
-nixText home pkgs = mconcat [header, pinnedDeps, footer] where
-  pinnedDeps = mconcat . fmap (textFromNix . versionedDerivation home) $ pkgs
-  header = "{ pkgs ? import <nixpkgs> {}, haskellPackages ? pkgs.haskellngPackages }:\n\n\
+nixText :: GHC -> FP.FilePath -> [PkgVer] -> Sh L.Text
+nixText (GHC ghc) home pkgs =
+    hastacheStr noEscape template (mkStrContext context) where
+      noEscape = defaultConfig { muEscapeFunc = emptyEscape }
+      context "ghc"= MuVariable ghc
+      context "pinnedDeps" = MuVariable $
+          mconcat . fmap (textFromNix . versionedDerivation home) $ pkgs
+      template =
+                 "{ pkgs ? import <nixpkgs> {}, haskellPackages ? pkgs.haskell-ng.packages.{{ghc}} }:\n\n\
 \let\n\
 \  hs = haskellPackages.override {\n\
-\        overrides = self: super: rec {\n"
-  footer = "          thisPackage = self.callPackage ./. {};\n\
+\        overrides = self: super: rec {\n\
+\{{pinnedDeps}}\
+\          thisPackage = self.callPackage ./. {};\n\
 \      };\n\
 \    };\n\
 \  in (hs.thisPackage.override (args: args // {\n\

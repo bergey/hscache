@@ -20,20 +20,24 @@ import Prelude hiding (FilePath)
 main :: IO ()
 main = execParser hscacheInfo >>= shelly . hscache
 
-hscache :: Command -> Sh ()
-hscache (Freeze args) = freeze args
-hscache (AddSource dirs) = addSourceCmd dirs
-hscache Build = build
-hscache Install = install
-hscache (Exec args) = exec args
-hscache Repl = repl
-hscache Shell = nix_shell
+hscache :: Options -> Sh ()
+hscache (Options ghc (Freeze args)) = freeze ghc args
+hscache (Options _ (AddSource dirs)) = addSourceCmd dirs
+hscache (Options _ Build) = build
+hscache (Options _ Install) = install
+hscache (Options _ (Exec args)) = exec args
+hscache (Options _ Repl) = repl
+hscache (Options _ Shell) = nix_shell
 
-hscacheInfo :: ParserInfo Command
-hscacheInfo = info (helper <*> commandParser)
+hscacheInfo :: ParserInfo Options
+hscacheInfo = info (helper <*> optionsParser)
               (fullDesc
               <> progDesc "Fast sandboxed Haskell builds.  Sandboxed builds of Haskell packages, using Cabal's dependency solver.  Cache built packages indexed by all their transitive dependencies."
               <> header "hscache - fast sandboxed Haskell builds")
+
+data Options = Options
+               GHC -- ^ GHC version, as Nix attribute
+               Command
 
 data Command
     = Freeze [T.Text]
@@ -43,6 +47,9 @@ data Command
     | Exec [T.Text]
     | Repl
     | Shell
+
+optionsParser :: Parser Options
+optionsParser = Options <$> ghcParser <*> commandParser
 
 commandParser :: Parser Command
 commandParser =
@@ -75,6 +82,17 @@ commandParser =
       (info (pure Shell) $
       progDesc "Launch a sub-shell with access to sandbox packages.")
     ]
+
+ghcParser :: Parser GHC
+ghcParser = GHC . T.pack <$> strOption (
+    short 'w'
+    <> long "with-ghc"
+    <> long "with-compiler"
+    <> help "Nix attr for the GHC version: eg, ghc7101"
+    <> metavar "GHC"
+    <> showDefault
+    <> value "ghc784"
+    )
 
 filepath :: ReadM FilePath
 filepath = fromText . T.pack <$> str
